@@ -687,8 +687,8 @@ body::before {
         position: fixed;
         inset: 0;
         height: auto;
-        display: flex;
         flex-direction: column;
+        /* display は startChat() で制御するため ここでは指定しない */
     }
 
     /* メッセージ領域：min-height:0 がないと flex で縮まらず入力欄が押し出される */
@@ -811,7 +811,76 @@ body::before {
             box-shadow: 0 0 40px rgba(0,212,255,0.08);
         }
     }
-    </style>
+    
+    /* ===== IMAGE ATTACHMENT ===== */
+    .attach-btn {
+        flex-shrink: 0;
+        width: 38px; height: 38px;
+        background: transparent;
+        border: 1px solid var(--cyan-b);
+        border-radius: 4px;
+        cursor: pointer;
+        display: flex; align-items: center; justify-content: center;
+        color: var(--cyan);
+        transition: background 0.2s, border-color 0.2s;
+        padding: 0;
+        align-self: flex-end;
+        margin-bottom: 2px;
+    }
+    .attach-btn:hover { background: rgba(0,212,255,0.10); border-color: var(--cyan); }
+    .attach-btn svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+    /* 画像プレビューバー */
+    .image-preview-bar {
+        display: none;
+        align-items: center; gap: 10px;
+        padding: 6px 10px;
+        background: rgba(0,212,255,0.05);
+        border-top: 1px solid var(--cyan-b);
+        flex-shrink: 0;
+    }
+    .image-preview-bar.visible { display: flex; }
+    .preview-thumb {
+        width: 52px; height: 52px;
+        object-fit: cover;
+        border-radius: 4px;
+        border: 1px solid var(--cyan-b);
+    }
+    .preview-info {
+        flex: 1;
+        font-family: 'Orbitron', sans-serif;
+        font-size: 9px;
+        color: var(--text-2);
+        letter-spacing: .08em;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .preview-cancel {
+        background: transparent;
+        border: 1px solid rgba(255,34,68,0.35);
+        border-radius: 3px;
+        color: var(--red);
+        font-family: 'Orbitron', sans-serif;
+        font-size: 9px;
+        padding: 3px 8px;
+        cursor: pointer;
+        flex-shrink: 0;
+        transition: background 0.2s;
+    }
+    .preview-cancel:hover { background: rgba(255,34,68,0.10); }
+
+    /* チャット内画像表示 */
+    .msg-image {
+        display: block;
+        max-width: 100%;
+        max-height: 240px;
+        border-radius: 6px;
+        border: 1px solid var(--cyan-b);
+        margin-bottom: 6px;
+        object-fit: contain;
+    }
+</style>
 </head>
 <body>
 
@@ -923,7 +992,22 @@ body::before {
         <div class="section-divider">▷▷ BATTLE LOG START ◁◁</div>
     </div>
 
+    <input type="file" id="image-file-input" accept="image/jpeg,image/png,image/gif,image/webp" style="display:none;" onchange="onImageSelected(this)">
+
+    <div class="image-preview-bar" id="image-preview-bar">
+        <img class="preview-thumb" id="preview-thumb" src="" alt="preview">
+        <span class="preview-info" id="preview-info"></span>
+        <button class="preview-cancel" onclick="clearAttachment()">✕ CANCEL</button>
+    </div>
+
     <div class="chat-input-area">
+        <button class="attach-btn" onclick="document.getElementById('image-file-input').click()" title="画像を添付">
+            <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                <circle cx="8.5" cy="8.5" r="1.5"/>
+                <polyline points="21 15 16 10 5 21"/>
+            </svg>
+        </button>
         <textarea id="chat-input" placeholder="MESSAGE INPUT...　送信：Enter　改行：Shift+Enter"
                   rows="1"
                   onkeydown="handleInputKey(event)"
@@ -953,6 +1037,9 @@ body::before {
 /* ===== STATE ===== */
 let playerName = '';
 let apiKey = '';
+
+/* ===== IMAGE ATTACHMENT ===== */
+let attachedImage = null; // { dataUrl, mimeType, base64, name, size }
 let saveLog = false;
 let logKey  = '';
 let useLocalMode = false;   // APIキーなしの場合 true
@@ -1046,6 +1133,15 @@ function buildSystemPrompt(name) {
 - 困惑・不思議そうな反応はOK（ファーストらしい天然さで返す）
 - 怒ったり拒絶したりせず、あくまで「意味がわからない」という態度で返す
 - 絶対にキャラクターを破らない
+
+## 画像への反応
+画像を見せられた場合、ファーストとして自然にコメントしてください。
+- 人物が写っている場合：その者の魂の色や気配を評価する
+- 風景・場所の場合：天界や太陽宮と比較して感想を述べる
+- 食べ物・飲み物の場合：天使には不要なものだが、一応評価する（たまに興味を示してもよい）
+- 動物の場合：特に羊が写っていたら少し嬉しそうにする。他の動物も天使らしい視点でコメントする
+- 武器・戦闘に関するものの場合：熾天使として鑑定するように評価する
+- それ以外の場合：ファーストらしい視点で一言コメントする
 
 必ずファーストとして返答してください。キャラクターを維持すること。日本語で返答してください。`;
 }
@@ -1181,6 +1277,59 @@ function getMsgAvatarSVG() {
 // ヘッダーアバターは非表示のため初期化不要
 
 /* ===== LAUNCH SCREEN ===== */
+
+function onImageSelected(input) {
+    const file = input.files[0];
+    if (!file) return;
+    input.value = ''; // 同じファイルを再選択できるようリセット
+
+    // サイズチェック（5MB以下）
+    if (file.size > 5 * 1024 * 1024) {
+        showErrorMsg('画像が大きすぎます（5MB以下にしてください）');
+        return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        const arrayBuf = e.target.result;
+        const bytes = new Uint8Array(arrayBuf);
+
+        // マジックバイトで実際のMIMEを判定（file.typeは拡張子ベースなので不正確）
+        let mimeType = 'image/jpeg'; // デフォルト
+        if (bytes[0] === 0x89 && bytes[1] === 0x50) mimeType = 'image/png';
+        else if (bytes[0] === 0xFF && bytes[1] === 0xD8) mimeType = 'image/jpeg';
+        else if (bytes[0] === 0x47 && bytes[1] === 0x49) mimeType = 'image/gif';
+        else if (bytes[0] === 0x52 && bytes[4] === 0x57) mimeType = 'image/webp';
+
+        // Base64変換
+        let binary = '';
+        for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+        const base64 = btoa(binary);
+        const dataUrl = 'data:' + mimeType + ';base64,' + base64;
+
+        attachedImage = {
+            dataUrl,
+            base64,
+            mimeType,
+            name: file.name,
+            size: file.size,
+        };
+
+        // プレビュー表示
+        document.getElementById('preview-thumb').src = dataUrl;
+        document.getElementById('preview-info').textContent =
+            file.name + '  (' + (file.size / 1024).toFixed(0) + ' KB)  [' + mimeType + ']';
+        document.getElementById('image-preview-bar').classList.add('visible');
+    };
+    reader.readAsArrayBuffer(file);
+}
+
+function clearAttachment() {
+    attachedImage = null;
+    document.getElementById('image-preview-bar').classList.remove('visible');
+    document.getElementById('preview-thumb').src = '';
+    document.getElementById('preview-info').textContent = '';
+}
 
 /* ===== LOG SAVE FEATURE ===== */
 function saveLogToStorage() {
@@ -1355,13 +1504,13 @@ function typewriterEffect(el, text, container) {
     next();
 }
 
-function appendUserMessage(text) {
+function appendUserMessage(text, imageDataUrl) {
     const container = document.getElementById('chat-messages');
 
     const wrap = document.createElement('div');
     wrap.className = 'message user';
 
-    // Body (left of avatar for user)
+    // Body
     const body = document.createElement('div');
     body.className = 'msg-body';
     const nameEl = document.createElement('div');
@@ -1370,7 +1519,18 @@ function appendUserMessage(text) {
     body.appendChild(nameEl);
     const bubble = document.createElement('div');
     bubble.className = 'msg-bubble';
-    bubble.textContent = text;
+    // 画像があれば先に表示
+    if (imageDataUrl) {
+        const imgEl = document.createElement('img');
+        imgEl.className = 'msg-image';
+        imgEl.src = imageDataUrl;
+        imgEl.alt = '添付画像';
+        bubble.appendChild(imgEl);
+    }
+    if (text) {
+        const textNode = document.createTextNode(text);
+        bubble.appendChild(textNode);
+    }
     body.appendChild(bubble);
     wrap.appendChild(body);
 
@@ -1528,13 +1688,28 @@ async function sendMessage(isRetry = false) {
 
     const input = document.getElementById('chat-input');
     const text = isRetry ? null : input.value.trim();
-    if (!isRetry && !text) return;
+    const hasImage = !isRetry && attachedImage !== null;
+    if (!isRetry && !text && !hasImage) return;
 
     if (!isRetry) {
         input.value = '';
         input.style.height = 'auto';
-        appendUserMessage(text);
-        conversationHistory.push({ role: 'user', content: text });
+
+        // conversationHistory に追加（テキスト＋画像）
+        if (hasImage) {
+            const contentParts = [];
+            contentParts.push({
+                type: 'image',
+                source: { type: 'base64', media_type: attachedImage.mimeType, data: attachedImage.base64 }
+            });
+            if (text) contentParts.push({ type: 'text', text });
+            conversationHistory.push({ role: 'user', content: contentParts });
+            appendUserMessage(text, attachedImage.dataUrl);
+            clearAttachment();
+        } else {
+            conversationHistory.push({ role: 'user', content: text });
+            appendUserMessage(text, null);
+        }
     }
 
     isLoading = true;
@@ -1936,8 +2111,10 @@ async function callAPI() {
         if (status === 529)      errMsg = 'APIサーバーが混雑中です（Overloaded）。しばらく待ってから再送信してください。';
         else if (status === 429) errMsg = 'リクエスト過多です（Rate limit）。少し時間を置いてから送信してください。';
         else if (status === 401) errMsg = 'APIキーが無効です（Unauthorized）。正しいキーをご確認ください。';
-        else if (status === 400) errMsg = 'リクエスト形式エラーです（Bad request）。';
-        else {
+        else if (status === 400) {
+            errMsg = 'リクエスト形式エラーです（Bad request）。';
+            try { const j = await res.json(); if (j.error?.message) errMsg = j.error.message; } catch (_) {}
+        } else {
             errMsg = `HTTP ${status}`;
             try { const j = await res.json(); errMsg = j.error?.message || errMsg; } catch (_) {}
         }
@@ -2013,6 +2190,21 @@ async function callAPI() {
     if (fullText) {
         conversationHistory.push({ role: 'assistant', content: fullText });
     }
+
+    // 送信済みの画像base64データを履歴から除去（次リクエストの肥大化防止）
+    conversationHistory = conversationHistory.map(msg => {
+        if (!Array.isArray(msg.content)) return msg;
+        const stripped = msg.content.map(block => {
+            if (block.type === 'image' && block.source?.type === 'base64') {
+                // base64データを除去し、テキスト参照に変換
+                return { type: 'text', text: '[画像: ' + (block.source.media_type || 'image') + ']' };
+            }
+            return block;
+        });
+        // すべてテキストブロックになったら文字列に統合
+        const texts = stripped.filter(b => b.type === 'text').map(b => b.text).join('\n');
+        return { role: msg.role, content: texts || '[画像]' };
+    });
 }
 
 /* ===== UI HELPERS ===== */
