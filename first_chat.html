@@ -1281,11 +1281,14 @@ function getMsgAvatarSVG() {
 function onImageSelected(input) {
     const file = input.files[0];
     if (!file) return;
-    input.value = ''; // 同じファイルを再選択できるようリセット
+    input.value = '';
 
-    // サイズチェック（5MB以下）
-    if (file.size > 5 * 1024 * 1024) {
-        showErrorMsg('画像が大きすぎます（5MB以下にしてください）');
+    // 元ファイルサイズのログ（圧縮前チェックは行わず圧縮後で判定）
+    console.log('[IMG] 選択:', file.name, (file.size / 1024 / 1024).toFixed(2) + ' MB', file.type);
+
+    // 極端に大きいファイル（50MB超）だけ事前に弾く
+    if (file.size > 50 * 1024 * 1024) {
+        showErrorMsg('ファイルが大きすぎます（50MB以下にしてください）');
         return;
     }
 
@@ -1294,32 +1297,91 @@ function onImageSelected(input) {
         const arrayBuf = e.target.result;
         const bytes = new Uint8Array(arrayBuf);
 
-        // マジックバイトで実際のMIMEを判定（file.typeは拡張子ベースなので不正確）
-        let mimeType = 'image/jpeg'; // デフォルト
+        // マジックバイトで実際のMIMEを判定
+        let mimeType = 'image/jpeg';
         if (bytes[0] === 0x89 && bytes[1] === 0x50) mimeType = 'image/png';
         else if (bytes[0] === 0xFF && bytes[1] === 0xD8) mimeType = 'image/jpeg';
         else if (bytes[0] === 0x47 && bytes[1] === 0x49) mimeType = 'image/gif';
         else if (bytes[0] === 0x52 && bytes[4] === 0x57) mimeType = 'image/webp';
+        console.log('[IMG] 検出MIME:', mimeType);
 
-        // Base64変換
-        let binary = '';
-        for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-        const base64 = btoa(binary);
-        const dataUrl = 'data:' + mimeType + ';base64,' + base64;
+        // 元画像をBlobURLでImageに読み込み → Canvas でリサイズ・JPEG圧縮
+        const blob = new Blob([arrayBuf], { type: mimeType });
+        const blobUrl = URL.createObjectURL(blob);
+        const img = new Image();
+        img.onload = () => {
+            URL.revokeObjectURL(blobUrl);
+            console.log('[IMG] 元解像度:', img.width + 'x' + img.height);
 
-        attachedImage = {
-            dataUrl,
-            base64,
-            mimeType,
-            name: file.name,
-            size: file.size,
+            // 圧縮中メッセージ
+            const previewBar = document.getElementById('image-preview-bar');
+            const previewInfo = document.getElementById('preview-info');
+            previewBar.classList.add('visible');
+            previewInfo.textContent = '画像を最適化中...';
+
+            // Canvas に描画するユーティリティ
+            function drawToCanvas(srcImg, maxPx) {
+                let w = srcImg.width, h = srcImg.height;
+                if (w > maxPx || h > maxPx) {
+                    if (w >= h) { h = Math.round(h * maxPx / w); w = maxPx; }
+                    else        { w = Math.round(w * maxPx / h); h = maxPx; }
+                }
+                const c = document.createElement('canvas');
+                c.width = w; c.height = h;
+                c.getContext('2d').drawImage(srcImg, 0, 0, w, h);
+                return c;
+            }
+
+            const LIMIT = 4 * 1024 * 1024; // Base64文字数で4MB相当
+            const steps = [
+                { maxPx: 1024, qualities: [0.8, 0.7, 0.6, 0.5, 0.4, 0.3] },
+                { maxPx: 800,  qualities: [0.5, 0.4, 0.3] },
+                { maxPx: 600,  qualities: [0.5, 0.4, 0.3] },
+            ];
+
+            let result = null;
+
+            outer: for (const { maxPx, qualities } of steps) {
+                const canvas = drawToCanvas(img, maxPx);
+                for (const q of qualities) {
+                    const dataUrl = canvas.toDataURL('image/jpeg', q);
+                    const base64  = dataUrl.split(',')[1];
+                    const kb = (base64.length / 1024).toFixed(0);
+                    console.log('[IMG] 試行: ' + maxPx + 'px q=' + q + ' → Base64=' + kb + 'KB (' + base64.length + ' chars) LIMIT=' + (LIMIT/1024).toFixed(0) + 'KB');
+                    if (base64.length <= LIMIT) {
+                        result = { dataUrl, base64, w: canvas.width, h: canvas.height, q, maxPx };
+                        console.log('[IMG] 圧縮成功: ' + canvas.width + 'x' + canvas.height + ' q=' + q + ' ' + kb + 'KB');
+                        break outer;
+                    }
+                }
+            }
+
+            if (!result) {
+                console.log('[IMG] 圧縮失敗: すべてのステップで LIMIT 超過');
+                previewBar.classList.remove('visible');
+                showErrorMsg('画像を圧縮できませんでした。より小さい画像をお使いください。');
+                return;
+            }
+
+            const compressedBytes = Math.round(result.base64.length * 0.75);
+            attachedImage = {
+                dataUrl:  result.dataUrl,
+                base64:   result.base64,
+                mimeType: 'image/jpeg',
+                name:     file.name,
+                size:     compressedBytes,
+            };
+
+            document.getElementById('preview-thumb').src = result.dataUrl;
+            previewInfo.textContent =
+                file.name + '  (' + (compressedBytes / 1024).toFixed(0) + ' KB)  ' +
+                result.w + 'x' + result.h;
         };
-
-        // プレビュー表示
-        document.getElementById('preview-thumb').src = dataUrl;
-        document.getElementById('preview-info').textContent =
-            file.name + '  (' + (file.size / 1024).toFixed(0) + ' KB)  [' + mimeType + ']';
-        document.getElementById('image-preview-bar').classList.add('visible');
+        img.onerror = () => {
+            URL.revokeObjectURL(blobUrl);
+            showErrorMsg('画像の読み込みに失敗しました');
+        };
+        img.src = blobUrl;
     };
     reader.readAsArrayBuffer(file);
 }
