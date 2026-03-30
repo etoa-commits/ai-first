@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>FIRST // ANALYSIS SYSTEM</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -274,7 +274,7 @@ body::before {
 
 /* ===== CHAT SCREEN ===== */
 #chat-screen {
-    display: none; flex-direction: column; height: 100vh;
+    display: none; flex-direction: column; height: 100svh;
     background:
         radial-gradient(ellipse 55% 65% at 8% 38%, rgba(0,120,200,0.05) 0%, transparent 60%),
         radial-gradient(ellipse 42% 50% at 92% 72%, rgba(0,120,200,0.03) 0%, transparent 54%),
@@ -667,6 +667,132 @@ body::before {
     }
     .error-retry-btn:hover { background: rgba(0,212,255,0.18); }
     .typing-label { font-size: 9px; opacity: 0.7; letter-spacing: 0.1em; }
+
+    /* ===== RESPONSIVE / MOBILE ===== */
+
+    /* タップハイライト除去 */
+    * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
+
+    /* iOSキーボード表示時に入力欄が隠れない対応 */
+    #launch-screen {
+        min-height: 100svh;
+        min-height: -webkit-fill-available;
+    }
+    #chat-screen {
+        height: 100svh;
+        height: -webkit-fill-available;
+    }
+
+    /* iOS safe area（ノッチ・ホームバー対応） */
+    .chat-input-area {
+        padding-bottom: max(8px, env(safe-area-inset-bottom, 8px));
+    }
+
+    /* スムーズスクロール（iOS Safari） */
+    .chat-messages {
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior: contain;
+    }
+
+    /* 入力欄フォントサイズ16px → iOSズーム防止 */
+    .form-input,
+    #chat-input {
+        font-size: 16px !important;
+    }
+
+    /* 送信ボタン：タップターゲット44px確保 */
+    .send-btn {
+        min-height: 44px;
+        min-width: 64px;
+    }
+
+    /* 起動カード：スマホでの余白調整 */
+    @media (max-width: 480px) {
+        .launch-card {
+            width: 92vw;
+            max-width: 92vw;
+        }
+        .card-body {
+            padding: 20px 16px 20px;
+        }
+        .launch-title {
+            font-size: 19px;
+            letter-spacing: 3px;
+        }
+        .launch-title-en {
+            font-size: 10px;
+        }
+        .launch-subtitle {
+            font-size: 9px;
+        }
+        .hero-badge span {
+            font-size: 8px;
+            padding: 3px 7px;
+        }
+        .form-label {
+            font-size: 9px;
+        }
+        .mode-note {
+            font-size: 10px;
+        }
+        .enter-btn {
+            font-size: 12px;
+            padding: 11px 0;
+        }
+
+        /* チャット：メッセージ幅調整 */
+        .msg-bubble {
+            font-size: 13.5px;
+            padding: 9px 12px;
+        }
+        .message.assistant .msg-body {
+            max-width: calc(100vw - 110px);
+        }
+        .message.user .msg-body {
+            max-width: calc(100vw - 80px);
+        }
+        .msg-avatar {
+            width: 64px;
+            height: 64px;
+        }
+
+        /* チャットヘッダー */
+        .header-name {
+            font-size: 13px;
+        }
+        .header-name-en {
+            font-size: 8px;
+        }
+
+        /* 入力エリア */
+        .chat-input-area {
+            padding: 8px 8px 0;
+            gap: 6px;
+        }
+        #chat-input {
+            padding: 10px 10px;
+        }
+
+        /* ステータスバー */
+        .chat-status-bar {
+            padding: 4px 10px;
+            font-size: 8px;
+        }
+        .delete-log-btn {
+            font-size: 8px;
+            padding: 2px 6px;
+        }
+    }
+
+    /* PC：中央寄せ・最大幅480px */
+    @media (min-width: 481px) {
+        #chat-screen {
+            max-width: 480px;
+            margin: 0 auto;
+            box-shadow: 0 0 40px rgba(0,212,255,0.08);
+        }
+    }
+
 </style>
 </head>
 <body>
