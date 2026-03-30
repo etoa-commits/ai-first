@@ -675,23 +675,39 @@ body::before {
 
     /* iOSキーボード表示時に入力欄が隠れない対応 */
     #launch-screen {
-        min-height: 100svh;
+        min-height: 100dvh;
         min-height: -webkit-fill-available;
     }
+
+    /*
+     * チャット画面：position:fixed+inset:0 で Safari のツールバーに関係なく
+     * 常に表示領域ぴったりに収める（100vh / 100svh より確実）
+     */
     #chat-screen {
-        height: 100svh;
-        height: -webkit-fill-available;
+        position: fixed;
+        inset: 0;
+        height: auto;
+        display: flex;
+        flex-direction: column;
     }
 
-    /* iOS safe area（ノッチ・ホームバー対応） */
+    /* メッセージ領域：min-height:0 がないと flex で縮まらず入力欄が押し出される */
+    .chat-messages {
+        flex: 1;
+        min-height: 0;
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior: contain;
+    }
+
+    /* 入力エリア：flex-shrink:0 で常に画面内に収める + safe area */
     .chat-input-area {
+        flex-shrink: 0;
         padding-bottom: max(8px, env(safe-area-inset-bottom, 8px));
     }
 
-    /* スムーズスクロール（iOS Safari） */
-    .chat-messages {
-        -webkit-overflow-scrolling: touch;
-        overscroll-behavior: contain;
+    /* ステータスバー：flex-shrink:0 で押し出されない */
+    .chat-status-bar {
+        flex-shrink: 0;
     }
 
     /* 入力欄フォントサイズ16px → iOSズーム防止 */
@@ -784,16 +800,18 @@ body::before {
         }
     }
 
-    /* PC：中央寄せ・最大幅480px */
+    /* PC：中央寄せ・最大幅480px（fixedを解除して通常レイアウトに戻す） */
     @media (min-width: 481px) {
         #chat-screen {
+            position: relative;
+            inset: auto;
+            height: 100vh;
             max-width: 480px;
             margin: 0 auto;
             box-shadow: 0 0 40px rgba(0,212,255,0.08);
         }
     }
-
-</style>
+    </style>
 </head>
 <body>
 
