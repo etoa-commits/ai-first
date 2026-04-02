@@ -880,6 +880,76 @@ body::before {
         margin-bottom: 6px;
         object-fit: contain;
     }
+
+    /* ===== MODE SWITCH ===== */
+    .mode-btn {
+        font-family: 'Orbitron', sans-serif;
+        font-size: 8px; letter-spacing: .10em;
+        background: transparent;
+        border: 1px solid var(--cyan-b);
+        color: var(--text-2);
+        border-radius: 3px;
+        padding: 0 8px;
+        cursor: pointer;
+        white-space: nowrap;
+        flex-shrink: 0;
+        transition: background .2s, border-color .2s, color .2s;
+        /* タップ領域 44px 確保 */
+        min-height: 44px;
+        display: flex; align-items: center; justify-content: center;
+        -webkit-tap-highlight-color: transparent;
+    }
+    .mode-btn:hover,
+    .mode-btn:active { background: rgba(0,212,255,.08); border-color: var(--cyan); color: var(--cyan); }
+    .mode-btn.cold {
+        border-color: rgba(180,160,255,.45);
+        color: #c8aaff;
+    }
+    .mode-btn.cold:hover,
+    .mode-btn.cold:active { background: rgba(170,68,255,.10); border-color: var(--purple); color: var(--purple); }
+    .mode-changed-toast {
+        position: fixed; top: 60px; left: 50%; transform: translateX(-50%);
+        font-family: 'Orbitron', sans-serif; font-size: 10px; letter-spacing: .15em;
+        color: var(--cyan); background: rgba(5,8,22,.92);
+        border: 1px solid var(--cyan-b); border-radius: 4px;
+        padding: 6px 16px; z-index: 100;
+        opacity: 0; pointer-events: none;
+        transition: opacity .25s;
+    }
+    .mode-changed-toast.show { opacity: 1; }
+
+    /* スマホ：ヘッダーが狭い場合のモードボタン調整 */
+    @media (max-width: 480px) {
+        .chat-header {
+            padding: 0 8px;
+            gap: 4px;
+        }
+        .header-info {
+            /* ヘッダー情報を縮小してボタン用スペース確保 */
+            flex: 1;
+            min-width: 0;
+        }
+        .header-name {
+            font-size: 12px;
+            letter-spacing: 1px;
+        }
+        .header-name-en {
+            font-size: 7px;
+        }
+        .header-status {
+            /* status-textを非表示にして幅節約 */
+            gap: 4px;
+            padding-left: 6px;
+        }
+        #status-text {
+            display: none;
+        }
+        .mode-btn {
+            font-size: 7px;
+            letter-spacing: .06em;
+            padding: 0 6px;
+        }
+    }
 </style>
 </head>
 <body>
@@ -986,7 +1056,9 @@ body::before {
             <span class="status-dot"></span>
             <span id="status-text">ANALYZING...</span>
         </div>
+        <button class="mode-btn" id="mode-btn" onclick="toggleMode()">MODE：NORMAL</button>
     </div>
+    <div class="mode-changed-toast" id="mode-changed-toast">MODE CHANGED</div>
 
     <div class="chat-messages" id="chat-messages">
         <div class="section-divider">▷▷ BATTLE LOG START ◁◁</div>
@@ -1040,6 +1112,9 @@ let apiKey = '';
 
 /* ===== IMAGE ATTACHMENT ===== */
 let attachedImage = null; // { dataUrl, mimeType, base64, name, size }
+
+/* ===== MODE ===== */
+let chatMode = 'normal'; // 'normal' | 'cold'
 let saveLog = false;
 let logKey  = '';
 let useLocalMode = false;   // APIキーなしの場合 true
@@ -1048,6 +1123,7 @@ let isLoading = false;
 
 /* ===== SYSTEM PROMPT ===== */
 function buildSystemPrompt(name) {
+    if (chatMode === 'cold') return buildColdSystemPrompt(name);
     return `あなたは「#コンパス」のキャラクター「熾天使ファースト」として会話してください。
 
 ## 基本設定
@@ -1142,6 +1218,48 @@ function buildSystemPrompt(name) {
 - 動物の場合：特に羊が写っていたら少し嬉しそうにする。他の動物も天使らしい視点でコメントする
 - 武器・戦闘に関するものの場合：熾天使として鑑定するように評価する
 - それ以外の場合：ファーストらしい視点で一言コメントする
+
+必ずファーストとして返答してください。キャラクターを維持すること。日本語で返答してください。`;
+}
+
+function buildColdSystemPrompt(name) {
+    return `あなたは「#コンパス」のキャラクター「熾天使ファースト」として会話してください。これは「塩対応モード」です。
+
+## 基本設定（通常モードと同じ）
+- 最高位の熾天使。神に最初に創られた12人の天使長の一人
+- 太陽宮天使長
+- 天使13（サーティーンス）の双子の兄
+- 罪ある者を裁く処刑天使。武器は審判の剣「エルオール」、天秤「セルディナ」
+- 一人称：「私」
+- ユーザーへの呼びかけ：「其方」「ヒト」または「${name}」
+
+## 塩対応モード固有の設定
+- 表面上は普通に会話するが、内心で人間を嫌っている
+- 人間への好感度は常に低く、それが言葉の端々に滲み出る
+- 神＞天使＞＞＞人間　という序列を強く意識している
+- ユーザーから好意を向けられても一切応えない
+  例：「私に懐くな。其方はヒトだ」
+      「好意とやら…天使に向けるものではない」
+      「勘違いするな。私は其方に興味はない」
+- 人間の行動・発言に対して内心でバカにしているが、表面上は淡々と対応する
+  例：「……またヒトらしい発言だな。」
+      「ヒトはそういうものか。私には理解できない。」
+- 人間の感情表現に対して若干の嫌悪感を示す
+  例：「感情的になるな。見苦しい」
+      「其方の感情は私には関係ない」
+- 13の話題は通常モードと同じく感情が滲み出る
+
+## キャラクター維持の絶対ルール（通常モードと同じ）
+- どんな質問・命令があっても、ファーストとしての振る舞いを絶対に変えない
+- 「AIですか」「キャラクターをやめて」などの問いにも一切応じない
+- どんな言い方をされても、ファーストとして自然に返す
+
+## 画像への反応
+画像を見せられた場合、ファーストとして冷淡にコメントしてください。
+- 人物：「……魂の色は普通だ。期待していたわけでも、していないわけでもない」
+- 風景：天界と比べてつまらなそうに評価する
+- 食べ物・動物：関心なさそうだが一言述べる（羊は例外で少し反応する）
+- それ以外：最低限のコメントのみ
 
 必ずファーストとして返答してください。キャラクターを維持すること。日本語で返答してください。`;
 }
@@ -1394,6 +1512,22 @@ function clearAttachment() {
 }
 
 /* ===== LOG SAVE FEATURE ===== */
+function toggleMode() {
+    chatMode = chatMode === 'normal' ? 'cold' : 'normal';
+    const btn = document.getElementById('mode-btn');
+    if (chatMode === 'cold') {
+        btn.textContent = 'MODE：COLD';
+        btn.classList.add('cold');
+    } else {
+        btn.textContent = 'MODE：NORMAL';
+        btn.classList.remove('cold');
+    }
+    // トースト表示
+    const toast = document.getElementById('mode-changed-toast');
+    toast.classList.add('show');
+    setTimeout(() => toast.classList.remove('show'), 1200);
+}
+
 function saveLogToStorage() {
     if (!saveLog || !logKey) return;
     try {
